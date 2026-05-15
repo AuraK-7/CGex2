@@ -81,6 +81,8 @@ add_executable(ClassroomRenderer
     src/core/Transform.h
     src/render/Renderer.cpp
     src/render/Renderer.h
+    src/render/ShadowMap.cpp
+    src/render/ShadowMap.h
     src/render/Material.h
     src/render/Shader.cpp
     src/render/Shader.h

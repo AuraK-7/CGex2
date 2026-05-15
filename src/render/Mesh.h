@@ -44,6 +44,9 @@ public:
     void releaseVertexArrayForCurrentContext();
 
     const std::vector<TextureAsset>& textures() const { return textures_; }
+    glm::vec3 materialKd() const { return material_.diffuse; }
+
+    void accumulateWorldBounds(const glm::mat4& model, glm::vec3& outMin, glm::vec3& outMax) const;
 
 private:
     std::vector<Vertex> vertices_;

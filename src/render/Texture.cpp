@@ -1,7 +1,40 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "Texture.h"
 
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <vector>
+
+namespace {
+
+std::filesystem::path pathFromUtf8(const std::string& utf8)
+{
+#if defined(_WIN32)
+    return std::filesystem::u8path(utf8);
+#else
+    return std::filesystem::path(utf8);
+#endif
+}
+
+bool readWholeFile(const std::string& pathUtf8, std::vector<unsigned char>& out)
+{
+    const std::filesystem::path p = pathFromUtf8(pathUtf8);
+    std::ifstream f(p, std::ios::binary | std::ios::ate);
+    if (!f) {
+        return false;
+    }
+    const auto end = f.tellg();
+    if (end <= 0) {
+        return false;
+    }
+    f.seekg(0, std::ios::beg);
+    out.resize(static_cast<size_t>(end));
+    f.read(reinterpret_cast<char*>(out.data()), static_cast<std::streamsize>(out.size()));
+    return !f.fail() && f.gcount() == static_cast<std::streamsize>(out.size());
+}
+
+} // namespace
 
 static GLuint createGLTexture(const unsigned char* pixels, int w, int h, int ch)
 {
@@ -70,13 +103,21 @@ GLuint createTexture2DFromRGBAPixels(const void* pixels, int width, int height, 
 
 GLuint loadTexture2DFromFile(const std::string& path, bool flipV)
 {
-    if (path.empty()) { std::cerr << "[Tex] empty path\n"; return 0; }
-    stbi_set_flip_vertically_on_load(flipV ? 1 : 0);
+    if (path.empty()) {
+        std::cerr << "[Tex] empty path\n";
+        return 0;
+    }
+    std::vector<unsigned char> bytes;
+    if (!readWholeFile(path, bytes)) {
+        std::cerr << "[Tex] open failed: " << path << '\n';
+        return 0;
+    }
 
-    int w, h, ch;
-    unsigned char* data = stbi_load(path.c_str(), &w, &h, &ch, 0);
+    stbi_set_flip_vertically_on_load(flipV ? 1 : 0);
+    int w = 0, h = 0, ch = 0;
+    unsigned char* data = stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()), &w, &h, &ch, 0);
     if (!data) {
-        std::cerr << "[Tex] load failed: " << path << " (" << stbi_failure_reason() << ")\n";
+        std::cerr << "[Tex] decode failed: " << path << " (" << stbi_failure_reason() << ")\n";
         return 0;
     }
     GLuint id = createGLTexture(data, w, h, ch);

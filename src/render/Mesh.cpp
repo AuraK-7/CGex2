@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <string>
-#include <utility>
 
 Mesh::Mesh(std::vector<Vertex> vertices, std::vector<unsigned int> indices, std::vector<TextureAsset> textures, Material material)
     : vertices_(std::move(vertices))
@@ -145,6 +144,15 @@ void Mesh::setupVertexAttributes() const
 
     glEnableVertexAttribArray(4);
     glVertexAttribPointer(4, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, texCoords)));
+}
+
+void Mesh::accumulateWorldBounds(const glm::mat4& model, glm::vec3& outMin, glm::vec3& outMax) const
+{
+    for (const Vertex& v : vertices_) {
+        const glm::vec3 wp = glm::vec3(model * glm::vec4(v.position, 1.0f));
+        outMin = glm::min(outMin, wp);
+        outMax = glm::max(outMax, wp);
+    }
 }
 
 void Mesh::releaseGlObjects()

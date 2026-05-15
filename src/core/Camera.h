@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glad/glad.h>
+#include <algorithm>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -84,6 +85,18 @@ public:
         else
             OrbitDistance = glm::distance(Position, OrbitTarget);
         Mode = mode;
+    }
+
+    void fitOrbitAroundCenter(const glm::vec3& center, float boundingRadius)
+    {
+        OrbitTarget = center;
+        const float r = std::max(boundingRadius, 0.5f);
+        OrbitDistance = std::max(r * 2.0f, 5.0f);
+        Yaw = -125.0f;
+        Pitch = -18.0f;
+        updateCameraVectors();
+        Position = OrbitTarget - Front * OrbitDistance;
+        Mode = CameraMode::Orbit;
     }
 
 private:

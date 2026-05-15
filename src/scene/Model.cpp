@@ -5,8 +5,11 @@
 #include <assimp/material.h>
 #include <assimp/postprocess.h>
 
+#include <glm/vec3.hpp>
+
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <unordered_set>
 
@@ -33,12 +36,31 @@ std::string extractTexturePathToken(const std::string& rawPath)
     return lastToken.empty() ? rawPath : lastToken;
 }
 
+std::string makeEmbeddedTextureKey(const std::string& path)
+{
+    return "embedded:" + path;
+}
+
+std::string makeFileTextureKey(const std::string& normalizedPath)
+{
+    return "file:" + normalizedPath;
+}
+
 } // namespace
 
 Model::Model(const std::string& modelPath, const std::string& fallbackDiffuseTexturePath)
 {
     loadModel(modelPath);
-    (void)fallbackDiffuseTexturePath;
+    if (loaded_ && !fallbackDiffuseTexturePath.empty()) {
+        const GLuint tid = loadTexture2DFromFile(fallbackDiffuseTexturePath);
+        if (tid != 0) {
+            TextureAsset tex{tid, "texture_diffuse", fallbackDiffuseTexturePath};
+            loadedTextures_.push_back(tex);
+            for (Mesh& mesh : meshes_) {
+                mesh.attachTextureIfMissing(tex);
+            }
+        }
+    }
 }
 
 Model::~Model()
@@ -48,6 +70,13 @@ Model::~Model()
         if (texture.id != 0 && deleted.insert(texture.id).second) {
             glDeleteTextures(1, &texture.id);
         }
+    }
+}
+
+void Model::drawGeometryOnly() const
+{
+    for (const Mesh& mesh : meshes_) {
+        mesh.drawDirect();
     }
 }
 
@@ -81,7 +110,9 @@ void Model::loadModel(const std::string& modelPath)
             | aiProcess_CalcTangentSpace
             | aiProcess_GenSmoothNormals
             | aiProcess_JoinIdenticalVertices
-            | aiProcess_ImproveCacheLocality);
+            | aiProcess_FlipUVs
+            | aiProcess_ImproveCacheLocality
+            | aiProcess_FixInfacingNormals);
 
     if (scene == nullptr || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0 || scene->mRootNode == nullptr) {
         std::cerr << "[Model] Failed to load model with Assimp.\n"
@@ -170,12 +201,18 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene)
 
         std::vector<TextureAsset> diffuseTextures = loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse", scene);
         textures.insert(textures.end(), diffuseTextures.begin(), diffuseTextures.end());
+
+        std::vector<TextureAsset> specularTextures = loadMaterialTextures(material, aiTextureType_SPECULAR, "texture_specular", scene);
+        textures.insert(textures.end(), specularTextures.begin(), specularTextures.end());
+
+        std::vector<TextureAsset> shininessTextures = loadMaterialTextures(material, aiTextureType_SHININESS, "texture_roughness", scene);
+        textures.insert(textures.end(), shininessTextures.begin(), shininessTextures.end());
+
         std::vector<TextureAsset> normalTextures = loadMaterialTextures(material, aiTextureType_NORMALS, "texture_normal", scene);
         textures.insert(textures.end(), normalTextures.begin(), normalTextures.end());
+
         std::vector<TextureAsset> heightTextures = loadMaterialTextures(material, aiTextureType_HEIGHT, "texture_normal", scene);
         textures.insert(textures.end(), heightTextures.begin(), heightTextures.end());
-        std::vector<TextureAsset> roughnessTextures = loadMaterialTextures(material, aiTextureType_SHININESS, "texture_roughness", scene);
-        textures.insert(textures.end(), roughnessTextures.begin(), roughnessTextures.end());
     }
 
     return Mesh(std::move(vertices), std::move(indices), std::move(textures), materialData);
@@ -188,20 +225,63 @@ std::vector<TextureAsset> Model::loadMaterialTextures(aiMaterial* material, aiTe
     const unsigned int count = material->GetTextureCount(type);
     for (unsigned int i = 0; i < count; ++i) {
         aiString aiPath;
-        material->GetTexture(type, i, &aiPath);
+        if (material->GetTexture(type, i, &aiPath) != AI_SUCCESS) {
+            continue;
+        }
+
         std::string rawPath = extractTexturePathToken(aiPath.C_Str());
 
-        // ---- Embedded texture (*0, *1, ...) from glTF/GLB ----
-        if (rawPath.size() >= 2 && rawPath[0] == '*' && rawPath[1] >= '0' && rawPath[1] <= '9' && scene) {
-            int idx = std::stoi(rawPath.substr(1));
-            if (idx >= 0 && idx < static_cast<int>(scene->mNumTextures) && scene->mTextures[idx]) {
-                aiTexture* tex = scene->mTextures[idx];
-                GLuint glId = 0;
+        const aiTexture* embeddedTexture = scene ? scene->GetEmbeddedTexture(rawPath.c_str()) : nullptr;
+        if (embeddedTexture != nullptr) {
+            const std::string cacheKey = makeEmbeddedTextureKey(rawPath);
+            auto cached = textureCache_.find(cacheKey);
+            if (cached != textureCache_.end()) {
+                textures.push_back(TextureAsset{cached->second, typeName, cacheKey});
+                continue;
+            }
 
+            GLuint glId = 0;
+            if (embeddedTexture->mHeight == 0) {
+                glId = loadTexture2DFromMemory(
+                    reinterpret_cast<const unsigned char*>(embeddedTexture->pcData),
+                    static_cast<int>(embeddedTexture->mWidth),
+                    true);
+            } else {
+                glId = createTexture2DFromRGBAPixels(
+                    embeddedTexture->pcData,
+                    static_cast<int>(embeddedTexture->mWidth),
+                    static_cast<int>(embeddedTexture->mHeight),
+                    true);
+            }
+
+            if (glId != 0) {
+                textureCache_[cacheKey] = glId;
+                TextureAsset texture{glId, typeName, cacheKey};
+                textures.push_back(texture);
+                loadedTextures_.push_back(texture);
+            } else {
+                std::cerr << "[Model] Embedded texture decode failed: " << rawPath << "\n";
+            }
+            continue;
+        }
+
+        if (rawPath.size() >= 2 && rawPath[0] == '*' && rawPath[1] >= '0' && rawPath[1] <= '9' && scene) {
+            const int idx = std::stoi(rawPath.substr(1));
+            if (idx >= 0 && idx < static_cast<int>(scene->mNumTextures) && scene->mTextures[idx] != nullptr) {
+                const std::string cacheKey = makeEmbeddedTextureKey(rawPath);
+                auto cached = textureCache_.find(cacheKey);
+                if (cached != textureCache_.end()) {
+                    textures.push_back(TextureAsset{cached->second, typeName, cacheKey});
+                    continue;
+                }
+
+                const aiTexture* tex = scene->mTextures[idx];
+                GLuint glId = 0;
                 if (tex->mHeight == 0) {
-                    // Compressed (PNG/JPG) — raw bytes in pcData
                     glId = loadTexture2DFromMemory(
-                        reinterpret_cast<unsigned char*>(tex->pcData), tex->mWidth, true);
+                        reinterpret_cast<const unsigned char*>(tex->pcData),
+                        static_cast<int>(tex->mWidth),
+                        true);
                 } else {
                     glId = createTexture2DFromRGBAPixels(
                         tex->pcData,
@@ -211,35 +291,39 @@ std::vector<TextureAsset> Model::loadMaterialTextures(aiMaterial* material, aiTe
                 }
 
                 if (glId != 0) {
-                    TextureAsset ta{glId, typeName, rawPath};
-                    textures.push_back(ta);
-                    loadedTextures_.push_back(ta);
+                    textureCache_[cacheKey] = glId;
+                    TextureAsset texture{glId, typeName, cacheKey};
+                    textures.push_back(texture);
+                    loadedTextures_.push_back(texture);
                 } else {
-                    std::cerr << "[Model] Embedded texture decode failed: *" << idx << "\n";
+                    std::cerr << "[Model] Embedded texture decode failed: " << rawPath << "\n";
                 }
                 continue;
             }
         }
 
-        // ---- File-based texture ----
         std::filesystem::path resolvedPath(rawPath);
-        if (!resolvedPath.is_absolute())
+        if (!resolvedPath.is_absolute()) {
             resolvedPath = std::filesystem::path(directory_) / resolvedPath;
+        }
 
         const std::string normalized = normalizePathString(resolvedPath);
-        bool alreadyLoaded = false;
-        for (const auto& lt : loadedTextures_) {
-            if (lt.path == normalized) { textures.push_back(lt); alreadyLoaded = true; break; }
-        }
-        if (alreadyLoaded) continue;
+        const std::string cacheKey = makeFileTextureKey(normalized);
 
-        TextureAsset ta;
-        ta.id = loadTexture2DFromFile(normalized);
-        ta.type = typeName;
-        ta.path = normalized;
-        if (ta.id != 0) {
-            textures.push_back(ta);
-            loadedTextures_.push_back(ta);
+        auto cached = textureCache_.find(cacheKey);
+        if (cached != textureCache_.end()) {
+            textures.push_back(TextureAsset{cached->second, typeName, normalized});
+            continue;
+        }
+
+        TextureAsset texture;
+        texture.id = loadTexture2DFromFile(normalized);
+        texture.type = typeName;
+        texture.path = normalized;
+        if (texture.id != 0) {
+            textureCache_[cacheKey] = texture.id;
+            textures.push_back(texture);
+            loadedTextures_.push_back(texture);
         } else {
             std::cerr << "[Model] Texture load failed: " << normalized << "\n";
         }
@@ -247,29 +331,13 @@ std::vector<TextureAsset> Model::loadMaterialTextures(aiMaterial* material, aiTe
     return textures;
 }
 
-void Model::applyFallbackDiffuseTexture(const std::string& fallbackDiffuseTexturePath)
+void Model::worldBounds(const glm::mat4& modelMatrix, glm::vec3& outMin, glm::vec3& outMax) const
 {
-    if (fallbackDiffuseTexturePath.empty()) {
-        return;
+    glm::vec3 mn(std::numeric_limits<float>::max());
+    glm::vec3 mx(std::numeric_limits<float>::lowest());
+    for (const Mesh& mesh : meshes_) {
+        mesh.accumulateWorldBounds(modelMatrix, mn, mx);
     }
-
-    std::filesystem::path fallbackPath(fallbackDiffuseTexturePath);
-    if (!fallbackPath.is_absolute()) {
-        fallbackPath = std::filesystem::current_path() / fallbackPath;
-    }
-
-    const std::string normalizedFallback = normalizePathString(fallbackPath);
-    const GLuint textureId = loadTexture2DFromFile(normalizedFallback);
-    if (textureId == 0) {
-        std::cerr << "[Model] Fallback texture could not be loaded.\n"
-                  << "  Path: " << normalizedFallback << '\n';
-        return;
-    }
-
-    const TextureAsset fallbackTexture {textureId, "texture_diffuse", normalizedFallback};
-    for (Mesh& mesh : meshes_) {
-        mesh.attachTextureIfMissing(fallbackTexture);
-    }
-
-    loadedTextures_.push_back(fallbackTexture);
+    outMin = mn;
+    outMax = mx;
 }
