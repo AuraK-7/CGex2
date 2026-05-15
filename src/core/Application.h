@@ -15,7 +15,8 @@ public:
         float cameraFov = 45.0f, cameraSpeed = 5.0f, cameraSensitivity = 0.15f;
     };
 
-    explicit Application(const Config& cfg = {});
+    Application();
+    explicit Application(const Config& cfg);
     ~Application();
 
     Application(const Application&) = delete;

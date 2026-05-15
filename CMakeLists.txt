@@ -57,6 +57,34 @@ else()
     FetchContent_MakeAvailable(glfw)
 endif()
 
+# Dear ImGui (GLFW + OpenGL3, GLAD loader)
+FetchContent_Declare(
+    imgui_fc
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG v1.91.0
+)
+FetchContent_GetProperties(imgui_fc)
+if(NOT imgui_fc_POPULATED)
+    FetchContent_Populate(imgui_fc)
+endif()
+set(IMGUI_DIR "${imgui_fc_SOURCE_DIR}")
+add_library(imgui STATIC
+    "${IMGUI_DIR}/imgui.cpp"
+    "${IMGUI_DIR}/imgui_demo.cpp"
+    "${IMGUI_DIR}/imgui_draw.cpp"
+    "${IMGUI_DIR}/imgui_tables.cpp"
+    "${IMGUI_DIR}/imgui_widgets.cpp"
+    "${IMGUI_DIR}/backends/imgui_impl_glfw.cpp"
+    "${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp"
+)
+target_include_directories(imgui PUBLIC
+    "${IMGUI_DIR}"
+    "${IMGUI_DIR}/backends"
+    "${GLAD_ROOT}/include"
+)
+target_link_libraries(imgui PUBLIC glfw glad)
+target_compile_definitions(imgui PRIVATE IMGUI_IMPL_OPENGL_LOADER_GLAD)
+
 set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
@@ -81,6 +109,10 @@ add_executable(ClassroomRenderer
     src/core/Application.h
     src/core/Camera.h
     src/core/Transform.h
+    src/collision/AABB.cpp
+    src/collision/AABB.h
+    src/collision/DebugAabbDrawer.cpp
+    src/collision/DebugAabbDrawer.h
     src/render/Renderer.cpp
     src/render/Renderer.h
     src/render/Material.h
@@ -110,4 +142,5 @@ target_link_libraries(ClassroomRenderer PRIVATE
     glad
     glfw
     assimp
+    imgui
 )

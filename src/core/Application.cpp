@@ -1,6 +1,11 @@
 #include "core/Application.h"
 #include <iostream>
 
+Application::Application()
+    : Application(Config{})
+{
+}
+
 Application::Application(const Config& cfg)
     : camera_(cfg.cameraPos), cfg_(cfg)
 {

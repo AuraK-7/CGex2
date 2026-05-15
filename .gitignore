@@ -86,3 +86,6 @@ Thirdparty
 screenshots/
 render_output/
 *.log
+
+# Dear ImGui saved layout (local)
+imgui.ini

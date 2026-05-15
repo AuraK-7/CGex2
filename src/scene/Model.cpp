@@ -3,8 +3,10 @@
 
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
+#include <assimp/ProgressHandler.hpp>
 #include <GLFW/glfw3.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <iostream>
 #include <unordered_set>
@@ -21,13 +23,51 @@ std::string normalizePathString(const std::filesystem::path& path)
     return path.lexically_normal().generic_string();
 }
 
+unsigned countMeshesUnderNode(const aiNode* node)
+{
+    unsigned c = node->mNumMeshes;
+    for (unsigned i = 0; i < node->mNumChildren; ++i) {
+        c += countMeshesUnderNode(node->mChildren[i]);
+    }
+    return c;
+}
+
+class AssimpFileProgress final : public Assimp::ProgressHandler {
+public:
+    explicit AssimpFileProgress(Model::LoadProgressCallback cb)
+        : cb_(std::move(cb))
+    {
+    }
+
+    bool Update(float percentage) override
+    {
+        if (!cb_) {
+            return true;
+        }
+        if (percentage < 0.0f) {
+            cb_(0.12f, "Assimp: processing…");
+            return true;
+        }
+        const float p = std::clamp(percentage, 0.0f, 1.0f);
+        cb_(0.05f + 0.28f * p, "Assimp: reading / parsing file…");
+        return true;
+    }
+
+private:
+    Model::LoadProgressCallback cb_;
+};
+
 } // namespace
 
-Model::Model(const std::string& modelPath, const std::string& fallbackDiffuseTexturePath)
+Model::Model(const std::string& modelPath, const std::string& fallbackDiffuseTexturePath,
+             LoadProgressCallback onProgress)
+    : progressCb_(std::move(onProgress))
 {
     loadModel(modelPath);
     if (loaded_) {
+        emitProgress(0.86f, "Applying fallback textures…");
         applyFallbackDiffuseTexture(fallbackDiffuseTexturePath);
+        emitProgress(1.0f, "Model ready.");
     }
 }
 
@@ -39,6 +79,15 @@ Model::~Model()
             glDeleteTextures(1, &texture.id);
         }
     }
+}
+
+void Model::emitProgress(float normalized, const char* status)
+{
+    if (!progressCb_) {
+        return;
+    }
+    float t = std::clamp(normalized, 0.0f, 1.0f);
+    progressCb_(t, status ? status : "");
 }
 
 void Model::draw(const Shader& shader) const
@@ -72,7 +121,15 @@ void Model::draw(const Shader& shader) const
 
 void Model::loadModel(const std::string& modelPath)
 {
+    emitProgress(0.0f, "Starting model load…");
+
     Assimp::Importer importer;
+    AssimpFileProgress assimpProgress(progressCb_);
+    if (progressCb_) {
+        importer.SetProgressHandler(&assimpProgress);
+    }
+
+    emitProgress(0.02f, "Reading model file (Assimp)…");
     const aiScene* scene = importer.ReadFile(
         modelPath,
         aiProcess_Triangulate
@@ -81,25 +138,34 @@ void Model::loadModel(const std::string& modelPath)
             | aiProcess_FlipUVs
             | aiProcess_ImproveCacheLocality);
 
+    importer.SetProgressHandler(nullptr);
+
     if (scene == nullptr || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0 || scene->mRootNode == nullptr) {
         std::cerr << "[Model] Failed to load model with Assimp.\n"
                   << "  Path: " << modelPath << '\n'
                   << "  Assimp error: " << importer.GetErrorString() << '\n';
         loaded_ = false;
+        emitProgress(0.0f, "Load failed.");
         return;
     }
 
     directory_ = std::filesystem::path(modelPath).parent_path().string();
+    meshDone_ = 0;
+    meshTotal_ = std::max(1u, countMeshesUnderNode(scene->mRootNode));
+    emitProgress(0.36f, "Building GPU meshes…");
+
     processNode(scene->mRootNode, scene);
     loaded_ = !meshes_.empty();
 
     if (!loaded_) {
         std::cerr << "[Model] Model loaded but no mesh data was extracted.\n"
                   << "  Path: " << modelPath << '\n';
+        emitProgress(0.0f, "No mesh data extracted.");
     } else {
         std::cerr << "[Model] Loaded model successfully.\n"
                   << "  Path: " << modelPath << '\n'
                   << "  Mesh count: " << meshes_.size() << '\n';
+        emitProgress(0.85f, "Geometry upload complete.");
     }
 }
 
@@ -108,6 +174,14 @@ void Model::processNode(aiNode* node, const aiScene* scene)
     for (unsigned int i = 0; i < node->mNumMeshes; ++i) {
         aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
         meshes_.push_back(processMesh(mesh, scene));
+        ++meshDone_;
+        if (progressCb_) {
+            const float u = static_cast<float>(meshDone_) / static_cast<float>(meshTotal_);
+            const float p = 0.36f + 0.48f * u;
+            if (meshDone_ == 1u || (meshDone_ % 2u) == 0u || meshDone_ == meshTotal_) {
+                emitProgress(std::min(p, 0.84f), "Uploading mesh data to GPU…");
+            }
+        }
         if (meshes_.size() % 50 == 0) glfwPollEvents();
     }
 
@@ -147,6 +221,23 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene)
         const aiFace& face = mesh->mFaces[i];
         for (unsigned int j = 0; j < face.mNumIndices; ++j) {
             indices.push_back(face.mIndices[j]);
+        }
+    }
+
+    if (!vertices.empty()) {
+        glm::vec3 meshMin = vertices[0].position;
+        glm::vec3 meshMax = vertices[0].position;
+        for (std::size_t vi = 1; vi < vertices.size(); ++vi) {
+            meshMin = glm::min(meshMin, vertices[vi].position);
+            meshMax = glm::max(meshMax, vertices[vi].position);
+        }
+        if (!localAabbValid_) {
+            localAabbMin_ = meshMin;
+            localAabbMax_ = meshMax;
+            localAabbValid_ = true;
+        } else {
+            localAabbMin_ = glm::min(localAabbMin_, meshMin);
+            localAabbMax_ = glm::max(localAabbMax_, meshMax);
         }
     }
 
