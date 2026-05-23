@@ -1,0 +1,171 @@
+{
+    "environment": {
+        "name": "Scene",
+        "global_ambient": [
+            0.01,
+            0.01,
+            0.014
+        ]
+    },
+    "directional_light": {
+        "direction": [
+            -0.2,
+            -1.0,
+            -0.3
+        ],
+        "ambient": [
+            0.04,
+            0.04,
+            0.045
+        ],
+        "diffuse": [
+            0.28,
+            0.26,
+            0.22
+        ],
+        "specular": [
+            0.08,
+            0.07,
+            0.06
+        ],
+        "strength": 0.45
+    },
+    "point_lights": [
+        {
+            "comment": "WarmLight.001",
+            "position": [
+                -1.51,
+                4.935,
+                -0.3
+            ],
+            "color": [
+                1.0,
+                0.402,
+                0.15
+            ],
+            "intensity": 0.12,
+            "constant": 1.0,
+            "linear": 0.09,
+            "quadratic": 0.032
+        },
+        {
+            "comment": "WarmLight.002",
+            "position": [
+                1.411,
+                4.935,
+                -0.3
+            ],
+            "color": [
+                1.0,
+                0.403,
+                0.15
+            ],
+            "intensity": 0.12,
+            "constant": 1.0,
+            "linear": 0.09,
+            "quadratic": 0.032
+        },
+        {
+            "comment": "WarmLight.003",
+            "position": [
+                6.694,
+                6.875,
+                0.762
+            ],
+            "color": [
+                0.901,
+                0.948,
+                1.0
+            ],
+            "intensity": 0.25,
+            "constant": 1.0,
+            "linear": 0.09,
+            "quadratic": 0.032
+        },
+        {
+            "comment": "WarmLight.004",
+            "position": [
+                0.414,
+                12.312,
+                23.278
+            ],
+            "color": [
+                0.851,
+                0.932,
+                1.0
+            ],
+            "intensity": 0.12,
+            "constant": 1.0,
+            "linear": 0.09,
+            "quadratic": 0.032
+        },
+        {
+            "comment": "WarmLight.005",
+            "position": [
+                -0.067,
+                12.809,
+                -27.682
+            ],
+            "color": [
+                0.94,
+                1.0,
+                0.882
+            ],
+            "intensity": 0.45,
+            "constant": 1.0,
+            "linear": 0.09,
+            "quadratic": 0.032
+        },
+        {
+            "comment": "WarmLight.006",
+            "position": [
+                -6.794,
+                6.875,
+                0.762
+            ],
+            "color": [
+                0.851,
+                0.932,
+                1.0
+            ],
+            "intensity": 0.25,
+            "constant": 1.0,
+            "linear": 0.09,
+            "quadratic": 0.032
+        },
+        {
+            "comment": "WarmLight.007",
+            "position": [
+                -0.067,
+                12.074,
+                30.549
+            ],
+            "color": [
+                0.928,
+                1.0,
+                0.924
+            ],
+            "intensity": 0.45,
+            "constant": 1.0,
+            "linear": 0.09,
+            "quadratic": 0.032
+        },
+        {
+            "comment": "WarmLight.008",
+            "position": [
+                0.414,
+                12.312,
+                -24.342
+            ],
+            "color": [
+                0.851,
+                0.932,
+                1.0
+            ],
+            "intensity": 0.12,
+            "constant": 1.0,
+            "linear": 0.09,
+            "quadratic": 0.032
+        }
+    ]
+}

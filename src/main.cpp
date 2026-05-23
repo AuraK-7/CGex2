@@ -230,7 +230,7 @@ int main()
     const std::string depthFragPath = resolvePath({"shaders/depth.frag"});
     const std::string dbgVert = resolvePath({"shaders/debug_line.vert"});
     const std::string dbgFrag = resolvePath({"shaders/debug_line.frag"});
-    const std::string lightingConfigPath = resolvePath({"resources/config/lighting_config.json"});
+    const std::string lightingConfigPath = resolvePath({"config/lighting_config.json"});
     if (vertPath.empty() || fragPath.empty() || depthVertPath.empty() || depthFragPath.empty()
         || dbgVert.empty() || dbgFrag.empty()) {
         std::cerr << "Required shader files not found.\n";
