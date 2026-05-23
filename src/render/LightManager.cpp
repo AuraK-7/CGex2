@@ -58,6 +58,8 @@ bool LightManager::loadConfig(const std::string& path)
 
         const auto& env = data.at("environment");
         globalAmbient = readVec3(env.at("global_ambient"), "environment.global_ambient");
+        pointLightStrength = env.value("point_light_strength", 1.0f);
+        spotLightStrength = env.value("spot_light_strength", 1.0f);
 
         const auto& dir = data.at("directional_light");
         sunLight.direction = readVec3(dir.at("direction"), "directional_light.direction");
@@ -107,6 +109,8 @@ bool LightManager::saveConfig(const std::string& path) const
     data["environment"] = {
         { "name", "Scene" },
         { "global_ambient", writeVec3(globalAmbient) },
+        { "point_light_strength", pointLightStrength },
+        { "spot_light_strength", spotLightStrength },
     };
     data["directional_light"] = {
         { "direction", writeVec3(sunLight.direction) },
@@ -165,7 +169,7 @@ void LightManager::sendToShader(unsigned int shaderID) const
     for (int i = 0; i < numLights; ++i) {
         const std::string base = "pointLights[" + std::to_string(i) + "].";
         setVec3(shaderID, base + "position", pointLights[i].position);
-        setVec3(shaderID, base + "color", pointLights[i].color);
+        setVec3(shaderID, base + "color", pointLights[i].color * pointLightStrength);
         setFloat(shaderID, base + "constant", pointLights[i].constant);
         setFloat(shaderID, base + "linear", pointLights[i].linear);
         setFloat(shaderID, base + "quadratic", pointLights[i].quadratic);

@@ -28,6 +28,8 @@ public:
     DirLight sunLight;
     std::vector<PointLight> pointLights;
     float directionalStrength = 1.8f;
+    float pointLightStrength = 1.0f;
+    float spotLightStrength = 1.0f;
 
     bool loadConfig(const std::string& path);
     bool saveConfig(const std::string& path) const;

@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <filesystem>
 #include <iostream>
+#include <cmath>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -139,13 +141,11 @@ void handleLightingHotkeys(GLFWwindow* window, LightingState& lighting)
         lighting.isDay = false;
     }
 
-    if (!lighting.isDay) {
-        if (keyO && !lighting.keyOWasDown) {
-            lighting.pointLightsOn = true;
-        }
-        if (keyC && !lighting.keyCWasDown) {
-            lighting.pointLightsOn = false;
-        }
+    if (keyO && !lighting.keyOWasDown) {
+        lighting.pointLightsOn = true;
+    }
+    if (keyC && !lighting.keyCWasDown) {
+        lighting.pointLightsOn = false;
     }
 
     lighting.key1WasDown = key1;
@@ -155,7 +155,7 @@ void handleLightingHotkeys(GLFWwindow* window, LightingState& lighting)
 }
 
 void syncLightingUniforms(Shader& shader, Renderer& renderer, const Camera& camera,
-                          const LightingState& lighting)
+                          const LightingState& lighting, const LightManager& lightManager)
 {
     shader.use();
     if (lighting.isDay) {
@@ -164,7 +164,7 @@ void syncLightingUniforms(Shader& shader, Renderer& renderer, const Camera& came
         shader.setVec3("dirLight.ambient", glm::vec3(0.10f, 0.105f, 0.12f));
         shader.setVec3("dirLight.diffuse", glm::vec3(0.88f, 0.82f, 0.68f));
         shader.setVec3("dirLight.specular", glm::vec3(0.22f, 0.20f, 0.18f));
-        shader.setInt("uPointLightsOn", 1);
+        shader.setInt("uPointLightsOn", lighting.pointLightsOn ? 1 : 0);
     } else {
         renderer.setDirectionalShadowsEnabled(false);
         shader.setFloat("uExposure", 0.94f);
@@ -173,6 +173,9 @@ void syncLightingUniforms(Shader& shader, Renderer& renderer, const Camera& came
         shader.setVec3("dirLight.specular", glm::vec3(0.10f, 0.10f, 0.10f));
         shader.setInt("uPointLightsOn", lighting.pointLightsOn ? 1 : 0);
     }
+
+    const float lampEmissionScale = lighting.pointLightsOn ? lightManager.pointLightStrength : 0.0f;
+    shader.setFloat("uLampEmissionScale", lampEmissionScale);
 
     shader.setVec3("spotLight.position", camera.Position);
     shader.setVec3("spotLight.direction", camera.Front);
@@ -186,9 +189,71 @@ void syncLightingUniforms(Shader& shader, Renderer& renderer, const Camera& came
         shader.setVec3("spotLight.diffuse", glm::vec3(0.0f));
         shader.setVec3("spotLight.specular", glm::vec3(0.0f));
     } else {
-        shader.setVec3("spotLight.diffuse", glm::vec3(0.78f, 0.76f, 0.82f));
-        shader.setVec3("spotLight.specular", glm::vec3(0.58f, 0.56f, 0.60f));
+        shader.setVec3("spotLight.diffuse", glm::vec3(0.78f, 0.76f, 0.82f) * lightManager.spotLightStrength);
+        shader.setVec3("spotLight.specular", glm::vec3(0.58f, 0.56f, 0.60f) * lightManager.spotLightStrength);
     }
+}
+
+void drawSunMarker(DebugAabbDrawer& drawer, GLFWwindow* window, const Camera& camera, const glm::vec3& direction)
+{
+    int w = 0;
+    int h = 0;
+    glfwGetFramebufferSize(window, &w, &h);
+    if (h <= 0) {
+        h = 1;
+    }
+
+    const glm::vec3 sunPos = camera.Position - glm::normalize(direction) * 12.0f + glm::vec3(0.0f, 3.0f, 0.0f);
+    std::vector<NamedAABB> marker;
+    marker.push_back({"Sun", AABB::fromCenterHalfExtents(sunPos, glm::vec3(0.22f))});
+
+    const glm::mat4 proj = glm::perspective(
+        glm::radians(camera.Zoom),
+        static_cast<float>(w) / static_cast<float>(h), 0.1f, 300.0f);
+    drawer.draw(proj, camera.GetViewMatrix(), marker, glm::vec3(1.0f, 0.82f, 0.12f));
+}
+
+void alignPointLightsToEmissiveMeshes(LightManager& lightManager, const Scene& scene)
+{
+    std::vector<EmissiveMeshInfo> emitters = scene.emissiveMeshCenters();
+    emitters.erase(std::remove_if(emitters.begin(), emitters.end(), [](const EmissiveMeshInfo& emitter) {
+        return glm::dot(emitter.color, emitter.color) < 0.25f;
+    }), emitters.end());
+
+    if (emitters.size() < lightManager.pointLights.size()) {
+        std::cerr << "[Light] Emissive lamp alignment skipped: found " << emitters.size()
+                  << " emissive mesh center(s), need " << lightManager.pointLights.size() << ".\n";
+        return;
+    }
+
+    std::vector<bool> used(emitters.size(), false);
+    for (PointLight& light : lightManager.pointLights) {
+        int bestIndex = -1;
+        float bestDistance2 = std::numeric_limits<float>::max();
+        for (std::size_t i = 0; i < emitters.size(); ++i) {
+            if (used[i]) {
+                continue;
+            }
+
+            const glm::vec3 delta = emitters[i].center - light.position;
+            const float distance2 = glm::dot(delta, delta);
+            if (distance2 < bestDistance2) {
+                bestDistance2 = distance2;
+                bestIndex = static_cast<int>(i);
+            }
+        }
+
+        if (bestIndex >= 0) {
+            used[static_cast<std::size_t>(bestIndex)] = true;
+            light.position = emitters[static_cast<std::size_t>(bestIndex)].center;
+            std::cout << "[Light] " << (light.name.empty() ? "PointLight" : light.name)
+                      << " position = (" << light.position.x << ", "
+                      << light.position.y << ", " << light.position.z << ")\n";
+        }
+    }
+
+    std::cout << "[Light] Aligned " << lightManager.pointLights.size()
+              << " point light position(s) to emissive lamp mesh centers.\n";
 }
 
 void shutdownImGui()
@@ -254,11 +319,11 @@ int main()
 
     const std::string modelPath = resolvePath({
         "resources/models/partyCarriage.glb",
-        "resources/models/oldschool.glb",
-        "resources/models/oldschool2.glb",
-        "resources/models/oldschool.obj",
-        "resources/models/Tsukinomori.obj",
-        "resources/models/Tsukinomori.fbx",
+        // "resources/models/oldschool.glb",
+        // "resources/models/oldschool2.glb",
+        // "resources/models/oldschool.obj",
+        // "resources/models/Tsukinomori.obj",
+        // "resources/models/Tsukinomori.fbx",
     });
 
     Scene scene;
@@ -311,6 +376,7 @@ int main()
 
     std::cout << "[Main] Loading " << scene.entries().size() << " model(s)...\n";
     scene.loadAll(pumpLoadUi);
+    alignPointLightsToEmissiveMeshes(lightManager, scene);
 
     glm::vec3 bmin;
     glm::vec3 bmax;
@@ -329,7 +395,8 @@ int main()
     bool useSceneEntryAABBs = true;
     bool collisionEnabled = false;
     bool drawColliders = false;
-    bool showImGuiDemo = false;
+    bool showSunMarker = true;
+    float shadowStrength = 0.94f;
     glm::vec3 debugColor{0.25f, 0.95f, 0.35f};
     glm::vec3 lastCameraPosition = app.camera().Position;
 
@@ -347,66 +414,35 @@ int main()
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
+        app.setInputBlockedByGui(io.WantCaptureMouse || io.WantCaptureKeyboard);
 
-        ImGui::Begin("Interaction & collision");
-        ImGui::Text("FPS: %.1f", static_cast<double>(io.Framerate));
+        ImGui::SetNextWindowPos(ImVec2(18.0f, 18.0f), ImGuiCond_Once);
+        ImGui::SetNextWindowSize(ImVec2(420.0f, 360.0f), ImGuiCond_Once);
+        ImGui::Begin("Lighting Panel");
+        ImGui::SetWindowFontScale(1.35f);
+        ImGui::Text("FPS %.1f", static_cast<double>(io.Framerate));
         ImGui::Separator();
-        ImGui::Text("Lighting: %s", lighting.isDay ? "Day" : "Night");
-        ImGui::Text("Classroom point lights: %s",
-                    (!lighting.isDay && lighting.pointLightsOn) ? "On" : "Off");
-        ImGui::TextUnformatted("Keys: 1 Day, 2 Night, O Open lights, C Close lights");
+        ImGui::Checkbox("Point Lights", &lighting.pointLightsOn);
+        ImGui::Checkbox("Show Sun Marker", &showSunMarker);
+        ImGui::Checkbox("Collision", &collisionEnabled);
+        ImGui::Checkbox("Show Colliders", &drawColliders);
         ImGui::Separator();
-        ImGui::Checkbox("Enable FPS collision", &collisionEnabled);
-        ImGui::Checkbox("Draw collider AABBs", &drawColliders);
-        ImGui::Checkbox("Include demo room walls", &showDemoColliders);
-        ImGui::Checkbox("Add scene entry world AABBs", &useSceneEntryAABBs);
-        ImGui::ColorEdit3("Debug line color", &debugColor.x);
-        ImGui::Checkbox("ImGui demo window", &showImGuiDemo);
+        ImGui::TextUnformatted("Ambient Light");
+        ImGui::ColorEdit3("Ambient Color", &lightManager.globalAmbient[0]);
         ImGui::Separator();
-        ImGui::TextWrapped(
-            "Scene AABBs are generated per mesh, so debug lines and collision use finer model bounds.");
-        ImGui::End();
-
-        ImGui::Begin("Lighting Control");
-        ImGui::ColorEdit3("Global ambient", &lightManager.globalAmbient[0]);
-        ImGui::SliderFloat("Directional strength", &lightManager.directionalStrength, 0.5f, 4.0f);
-        ImGui::Separator();
-        if (ImGui::CollapsingHeader("Directional light", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::DragFloat3("Direction", &lightManager.sunLight.direction[0], 0.02f, -1.0f, 1.0f);
-            ImGui::ColorEdit3("Sun ambient", &lightManager.sunLight.ambient[0]);
-            ImGui::ColorEdit3("Sun diffuse", &lightManager.sunLight.diffuse[0]);
-            ImGui::ColorEdit3("Sun specular", &lightManager.sunLight.specular[0]);
+        ImGui::TextUnformatted("Light Intensity");
+        ImGui::SliderFloat("Sun Strength", &lightManager.directionalStrength, 0.0f, 3.0f);
+        ImGui::SliderFloat("Shadow Strength", &shadowStrength, 0.0f, 1.0f);
+        ImGui::SliderFloat("Point Strength", &lightManager.pointLightStrength, 0.0f, 4.0f);
+        ImGui::SliderFloat("Flashlight Strength", &lightManager.spotLightStrength, 0.0f, 3.0f);
+        ImGui::DragFloat3("Sun Direction", &lightManager.sunLight.direction[0], 0.02f, -1.0f, 1.0f);
+        if (glm::dot(lightManager.sunLight.direction, lightManager.sunLight.direction) < 0.0001f) {
+            lightManager.sunLight.direction = glm::vec3(-0.2f, -1.0f, -0.3f);
         }
-        if (ImGui::CollapsingHeader("Point lights", ImGuiTreeNodeFlags_DefaultOpen)) {
-            for (size_t i = 0; i < lightManager.pointLights.size(); ++i) {
-                const std::string& lightName = lightManager.pointLights[i].name;
-                std::string label = lightName.empty()
-                    ? "Light #" + std::to_string(i)
-                    : lightName + "##light_" + std::to_string(i);
-                if (ImGui::TreeNode(label.c_str())) {
-                    PointLight& light = lightManager.pointLights[i];
-                    ImGui::DragFloat3("Position", &light.position[0], 0.1f);
-                    ImGui::ColorEdit3("Color", &light.color[0]);
-                    const float previousIntensity = light.intensity;
-                    if (ImGui::SliderFloat("Intensity", &light.intensity, 0.0f, 10.0f)
-                        && previousIntensity > 0.0001f) {
-                        light.color *= light.intensity / previousIntensity;
-                    }
-                    ImGui::DragFloat("Constant", &light.constant, 0.01f, 0.0f, 4.0f);
-                    ImGui::DragFloat("Linear", &light.linear, 0.005f, 0.0f, 1.0f);
-                    ImGui::DragFloat("Quadratic", &light.quadratic, 0.005f, 0.0f, 1.0f);
-                    ImGui::TreePop();
-                }
-            }
-        }
-        if (ImGui::Button("Save lighting config", ImVec2(-1.0f, 40.0f)) && !lightingConfigPath.empty()) {
+        if (ImGui::Button("Save Lighting Config", ImVec2(-1.0f, 42.0f)) && !lightingConfigPath.empty()) {
             lightManager.saveConfig(lightingConfigPath);
         }
         ImGui::End();
-
-        if (showImGuiDemo) {
-            ImGui::ShowDemoWindow(&showImGuiDemo);
-        }
 
         std::vector<NamedAABB> colliders;
         if (showDemoColliders) {
@@ -424,8 +460,12 @@ int main()
         lastCameraPosition = cam.Position;
 
         renderer.setLightDirection(glm::normalize(lightManager.sunLight.direction));
-        syncLightingUniforms(shader, renderer, cam, lighting);
+        renderer.setShadowStrength(shadowStrength);
+        syncLightingUniforms(shader, renderer, cam, lighting, lightManager);
         renderer.render(scene);
+        if (showSunMarker) {
+            drawSunMarker(debugDrawer, app.window(), cam, lightManager.sunLight.direction);
+        }
 
         if (drawColliders && !colliders.empty()) {
             int w = 0;

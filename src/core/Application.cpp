@@ -98,12 +98,14 @@ void Application::processInput()
     if (glfwGetKey(window_, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window_, GLFW_TRUE);
 
-    if (glfwGetKey(window_, GLFW_KEY_W) == GLFW_PRESS) camera_.ProcessKeyboard(Camera_Movement::FORWARD, deltaTime_);
-    if (glfwGetKey(window_, GLFW_KEY_S) == GLFW_PRESS) camera_.ProcessKeyboard(Camera_Movement::BACKWARD, deltaTime_);
-    if (glfwGetKey(window_, GLFW_KEY_A) == GLFW_PRESS) camera_.ProcessKeyboard(Camera_Movement::LEFT, deltaTime_);
-    if (glfwGetKey(window_, GLFW_KEY_D) == GLFW_PRESS) camera_.ProcessKeyboard(Camera_Movement::RIGHT, deltaTime_);
-    if (glfwGetKey(window_, GLFW_KEY_SPACE) == GLFW_PRESS) camera_.ProcessKeyboard(Camera_Movement::UP, deltaTime_);
-    if (glfwGetKey(window_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) camera_.ProcessKeyboard(Camera_Movement::DOWN, deltaTime_);
+    if (!inputBlockedByGui_) {
+        if (glfwGetKey(window_, GLFW_KEY_W) == GLFW_PRESS) camera_.ProcessKeyboard(Camera_Movement::FORWARD, deltaTime_);
+        if (glfwGetKey(window_, GLFW_KEY_S) == GLFW_PRESS) camera_.ProcessKeyboard(Camera_Movement::BACKWARD, deltaTime_);
+        if (glfwGetKey(window_, GLFW_KEY_A) == GLFW_PRESS) camera_.ProcessKeyboard(Camera_Movement::LEFT, deltaTime_);
+        if (glfwGetKey(window_, GLFW_KEY_D) == GLFW_PRESS) camera_.ProcessKeyboard(Camera_Movement::RIGHT, deltaTime_);
+        if (glfwGetKey(window_, GLFW_KEY_SPACE) == GLFW_PRESS) camera_.ProcessKeyboard(Camera_Movement::UP, deltaTime_);
+        if (glfwGetKey(window_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) camera_.ProcessKeyboard(Camera_Movement::DOWN, deltaTime_);
+    }
 
     bool tabNow = (glfwGetKey(window_, GLFW_KEY_TAB) == GLFW_PRESS);
     if (tabNow && !tabWasDown_) {
@@ -116,7 +118,7 @@ void Application::processInput()
 
     const bool leftHeld = glfwGetMouseButton(window_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     const bool rightHeld = glfwGetMouseButton(window_, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
-    const bool shouldCapture = leftHeld || rightHeld || cursorLocked_;
+    const bool shouldCapture = !inputBlockedByGui_ && (leftHeld || rightHeld || cursorLocked_);
 
     if (shouldCapture && !cursorCaptured_) {
         cursorCaptured_ = true;
@@ -129,8 +131,10 @@ void Application::processInput()
         firstMouse_ = true;
     }
 
-    if (scrollOffset_ != 0.0f) {
+    if (scrollOffset_ != 0.0f && !inputBlockedByGui_) {
         camera_.ProcessZoom(scrollOffset_);
+        scrollOffset_ = 0.0f;
+    } else if (inputBlockedByGui_) {
         scrollOffset_ = 0.0f;
     }
 }
@@ -138,7 +142,7 @@ void Application::processInput()
 void Application::cursorPosCallback(GLFWwindow* window, double xpos, double ypos)
 {
     auto* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
-    if (!app || !app->cursorCaptured_) return;
+    if (!app || !app->cursorCaptured_ || app->inputBlockedByGui_) return;
 
     float x = static_cast<float>(xpos);
     float y = static_cast<float>(ypos);

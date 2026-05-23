@@ -27,6 +27,7 @@ public:
     void releaseVertexArraysForCurrentContext();
 
     std::vector<NamedAABB> namedWorldAABBs() const;
+    std::vector<EmissiveMeshInfo> emissiveMeshCenters() const;
     bool computeWorldBounds(glm::vec3& outMin, glm::vec3& outMax) const;
 
     const std::vector<ModelEntry>& entries() const { return entries_; }

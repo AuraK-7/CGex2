@@ -2,6 +2,7 @@
 
 #include <GLFW/glfw3.h>
 
+#include <glm/geometric.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
@@ -16,11 +17,12 @@ ShadowMap::ShadowMap(int width, int height)
     glGenFramebuffers(1, &fbo_);
     glGenTextures(1, &depthTexture_);
     glBindTexture(GL_TEXTURE_2D, depthTexture_);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, width_, height_, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, width_, height_, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
     const float border[] = {1.0f, 1.0f, 1.0f, 1.0f};
     glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
 
@@ -71,10 +73,17 @@ glm::mat4 ShadowMap::computeLightSpaceMatrix(const glm::vec3& sceneMin, const gl
     const glm::vec3 center = 0.5f * (sceneMin + sceneMax);
     const glm::vec3 d = glm::normalize(lightDirectionUniform);
     const float extent = glm::length(sceneMax - sceneMin);
-    const float dist = std::max(extent * 0.65f, 6.0f);
+    const float dist = std::max(extent, 10.0f);
 
-    const glm::vec3 eye = center + d * dist;
-    glm::mat4 lightView = glm::lookAt(eye, center, glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::vec3 up(0.0f, 1.0f, 0.0f);
+    if (std::abs(glm::dot(d, up)) > 0.92f) {
+        up = glm::vec3(0.0f, 0.0f, 1.0f);
+    }
+
+    // dirLight.direction is the light ray direction, from the sun toward the scene.
+    // The shadow camera must sit on the opposite side and look along that ray.
+    const glm::vec3 eye = center - d * dist;
+    glm::mat4 lightView = glm::lookAt(eye, center, up);
 
     const std::array<glm::vec3, 8> corners = {
         glm::vec3(sceneMin.x, sceneMin.y, sceneMin.z),
@@ -100,11 +109,8 @@ glm::mat4 ShadowMap::computeLightSpaceMatrix(const glm::vec3& sceneMin, const gl
 
     const float padXY = std::max(extent * 0.05f, 1.0f);
     const float padZ = std::max((maxZ - minZ) * 0.22f, 1.5f);
-    float zNear = minZ - padZ;
-    float zFar = maxZ + padZ;
-    if (zNear > zFar) {
-        std::swap(zNear, zFar);
-    }
+    const float zNear = std::max(0.1f, -maxZ - padZ);
+    const float zFar = std::max(zNear + 1.0f, -minZ + padZ);
     const glm::mat4 lightProj = glm::ortho(minX - padXY, maxX + padXY, minY - padXY, maxY + padXY,
         zNear, zFar);
 

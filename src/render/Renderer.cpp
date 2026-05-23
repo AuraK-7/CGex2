@@ -22,12 +22,14 @@ Renderer::Renderer(Shader& litShader, Shader& depthShader, Camera& camera)
     : litShader_(litShader)
     , depthShader_(depthShader)
     , camera_(camera)
-    , shadowMap_(1024, 1024)
+    , shadowMap_(2048, 2048)
 {
 }
 
 void Renderer::render(const Scene& scene)
 {
+    static bool printedShadowStatus = false;
+
     GLint viewport[4] = {0, 0, 0, 0};
     glGetIntegerv(GL_VIEWPORT, viewport);
 
@@ -38,6 +40,18 @@ void Renderer::render(const Scene& scene)
     const bool haveBounds = sceneBoundsValid_;
 
     const bool wantShadowPass = directionalShadowsEnabled_ && haveBounds && depthShader_.isValid();
+    if (!printedShadowStatus) {
+        if (wantShadowPass) {
+            std::cout << "[Shadow] Directional shadow mapping enabled. Resolution: "
+                      << shadowMap_.width() << "x" << shadowMap_.height() << '\n';
+        } else {
+            std::cerr << "[Shadow] Directional shadow mapping disabled.\n"
+                      << "  directionalShadowsEnabled: " << (directionalShadowsEnabled_ ? "true" : "false") << '\n'
+                      << "  sceneBoundsValid: " << (haveBounds ? "true" : "false") << '\n'
+                      << "  depthShaderValid: " << (depthShader_.isValid() ? "true" : "false") << '\n';
+        }
+        printedShadowStatus = true;
+    }
 
     glm::mat4 lightSpace(1.0f);
     if (wantShadowPass) {
@@ -49,8 +63,7 @@ void Renderer::render(const Scene& scene)
         GLint previousCullFace = GL_BACK;
         glGetIntegerv(GL_CULL_FACE_MODE, &previousCullFace);
 
-        glEnable(GL_CULL_FACE);
-        glCullFace(GL_FRONT);
+        glDisable(GL_CULL_FACE);
         glEnable(GL_POLYGON_OFFSET_FILL);
         glPolygonOffset(1.25f, 3.0f);
 
@@ -60,7 +73,9 @@ void Renderer::render(const Scene& scene)
         scene.drawAll(depthShader_, true);
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glCullFace(previousCullFace);
+        if (cullFaceWasEnabled) {
+            glCullFace(previousCullFace);
+        }
         if (cullFaceWasEnabled) {
             glEnable(GL_CULL_FACE);
         } else {
@@ -89,6 +104,7 @@ void Renderer::render(const Scene& scene)
     litShader_.setVec3("dirLight.direction", dir);
     litShader_.setMat4("uLightSpaceMatrix", lightSpace);
     litShader_.setInt("uUseDirectionalShadow", wantShadowPass ? 1 : 0);
+    litShader_.setFloat("uShadowStrength", shadowStrength_);
     litShader_.setInt("shadowMap", kShadowMapUnit);
     litShader_.setVec2("uShadowTexelSize", glm::vec2(
         1.0f / static_cast<float>(shadowMap_.width()),

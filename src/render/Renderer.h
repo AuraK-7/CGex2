@@ -18,6 +18,7 @@ public:
 
     void setLightDirection(const glm::vec3& dir) { lightDir_ = glm::normalize(dir); }
     void setDirectionalShadowsEnabled(bool enabled) { directionalShadowsEnabled_ = enabled; }
+    void setShadowStrength(float strength) { shadowStrength_ = strength; }
 
     void toggleLight() { lightOn_ = !lightOn_; }
     bool isLightOn() const { return lightOn_; }
@@ -35,6 +36,7 @@ private:
     const LightManager* lightManager_ = nullptr;
     glm::vec3 lightDir_{-0.8f, -1.0f, -0.3f};
     bool directionalShadowsEnabled_ = true;
+    float shadowStrength_ = 0.72f;
     static constexpr int kShadowMapUnit = 3;
 
     bool sceneBoundsTried_ = false;

@@ -47,6 +47,8 @@ public:
 
     const std::vector<TextureAsset>& textures() const { return textures_; }
     glm::vec3 materialKd() const { return material_.diffuse; }
+    glm::vec3 materialEmissive() const { return material_.emissive; }
+    bool isEmissive() const noexcept { return glm::dot(material_.emissive, material_.emissive) > 0.0001f; }
     bool hasLocalBounds() const noexcept { return localBoundsValid_; }
     const glm::vec3& localBoundsMin() const noexcept { return localBoundsMin_; }
     const glm::vec3& localBoundsMax() const noexcept { return localBoundsMax_; }

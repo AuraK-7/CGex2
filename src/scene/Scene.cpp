@@ -125,6 +125,19 @@ std::vector<NamedAABB> Scene::namedWorldAABBs() const
     return out;
 }
 
+std::vector<EmissiveMeshInfo> Scene::emissiveMeshCenters() const
+{
+    std::vector<EmissiveMeshInfo> out;
+    for (const auto& entry : entries_) {
+        auto it = modelCache_.find(entry.path);
+        if (it == modelCache_.end() || !it->second->isLoaded()) {
+            continue;
+        }
+        it->second->appendEmissiveMeshCenters(entry.transform.matrix(), out);
+    }
+    return out;
+}
+
 bool Scene::computeWorldBounds(glm::vec3& outMin, glm::vec3& outMax) const
 {
     glm::vec3 mn(std::numeric_limits<float>::max());

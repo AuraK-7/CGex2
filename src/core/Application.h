@@ -28,6 +28,7 @@ public:
     GLFWwindow* window() const { return window_; }
     Camera& camera() { return camera_; }
     const Camera& camera() const { return camera_; }
+    void setInputBlockedByGui(bool blocked) { inputBlockedByGui_ = blocked; }
 
 private:
     GLFWwindow* window_ = nullptr;
@@ -37,6 +38,7 @@ private:
     float deltaTime_ = 0.0f, lastFrame_ = 0.0f;
 
     bool cursorCaptured_ = false, cursorLocked_ = false;
+    bool inputBlockedByGui_ = false;
     bool tabWasDown_ = false;
     float lastMouseX_ = 0.0f, lastMouseY_ = 0.0f;
     bool firstMouse_ = true;

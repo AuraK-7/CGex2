@@ -19,6 +19,11 @@ struct TransparentMeshDraw {
     float distanceSquared = 0.0f;
 };
 
+struct EmissiveMeshInfo {
+    glm::vec3 center{0.0f};
+    glm::vec3 color{0.0f};
+};
+
 class Model {
 public:
     using LoadProgressCallback = std::function<void(float normalized, const char* status)>;
@@ -46,6 +51,7 @@ public:
     const glm::vec3& localAabbMax() const noexcept { return localAabbMax_; }
     void appendWorldMeshAABBs(const glm::mat4& modelMatrix, const std::string& namePrefix,
                               std::vector<NamedAABB>& out) const;
+    void appendEmissiveMeshCenters(const glm::mat4& modelMatrix, std::vector<EmissiveMeshInfo>& out) const;
     void worldBounds(const glm::mat4& modelMatrix, glm::vec3& outMin, glm::vec3& outMax) const;
 
 private:

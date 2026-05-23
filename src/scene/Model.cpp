@@ -445,6 +445,14 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene, const glm::mat4& nod
         if (material->Get(AI_MATKEY_COLOR_DIFFUSE, diffuseColor) == AI_SUCCESS) {
             materialData.diffuse = glm::vec3(diffuseColor.r, diffuseColor.g, diffuseColor.b);
         }
+        aiColor3D specularColor(0.5f, 0.5f, 0.5f);
+        if (material->Get(AI_MATKEY_COLOR_SPECULAR, specularColor) == AI_SUCCESS) {
+            materialData.specular = glm::vec3(specularColor.r, specularColor.g, specularColor.b);
+        }
+        float shininess = 32.0f;
+        if (material->Get(AI_MATKEY_SHININESS, shininess) == AI_SUCCESS) {
+            materialData.shininess = std::clamp(shininess, 1.0f, 256.0f);
+        }
         float opacity = 1.0f;
         if (material->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS) {
             materialData.opacity = std::clamp(opacity, 0.0f, 1.0f);
@@ -599,6 +607,19 @@ void Model::appendWorldMeshAABBs(const glm::mat4& modelMatrix, const std::string
             mesh.localBoundsMax(),
             modelMatrix);
         out.push_back({namePrefix + "/mesh_" + std::to_string(i), world});
+    }
+}
+
+void Model::appendEmissiveMeshCenters(const glm::mat4& modelMatrix, std::vector<EmissiveMeshInfo>& out) const
+{
+    for (const Mesh& mesh : meshes_) {
+        if (!mesh.hasLocalBounds() || !mesh.isEmissive()) {
+            continue;
+        }
+
+        const glm::vec3 localCenter = 0.5f * (mesh.localBoundsMin() + mesh.localBoundsMax());
+        const glm::vec3 worldCenter = glm::vec3(modelMatrix * glm::vec4(localCenter, 1.0f));
+        out.push_back({worldCenter, mesh.materialEmissive()});
     }
 }
 

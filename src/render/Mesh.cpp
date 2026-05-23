@@ -92,6 +92,8 @@ void Mesh::draw(const Shader& shader) const
     shader.setBool("uHasNormalMap", hasNormalTexture);
     shader.setBool("uHasEmissiveMap", hasEmissiveTexture);
     shader.setVec3("uMaterialDiffuse", material_.diffuse);
+    shader.setVec3("uMaterialSpecular", material_.specular);
+    shader.setFloat("uMaterialShininess", material_.shininess);
     shader.setFloat("uMaterialAlpha", material_.opacity);
     shader.setVec3("uMaterialEmissive", material_.emissive);
 
